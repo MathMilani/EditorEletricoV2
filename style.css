@@ -1,0 +1,47 @@
+* { box-sizing: border-box; font-family: Arial, sans-serif; }
+body { margin: 0; padding: 0; display: flex; height: 100vh; background-color: #333; overflow: hidden; }
+
+#sidebar { width: 250px; background-color: #dcdcdc; border-right: 4px solid #2c3e50; padding: 20px; display: flex; flex-direction: column; align-items: center; flex-shrink: 0; z-index: 10; overflow-y: auto; }
+#sidebar h3 { text-align: center; font-size: 16px; margin-top: 0; margin-bottom: 20px; }
+.symbol-category { font-size: 14px; font-weight: bold; width: 100%; text-align: left; margin: 15px 0 10px 0; border-bottom: 2px solid #aaa; padding-bottom: 5px; color: #2c3e50; }
+.symbol-container { display: flex; flex-direction: column; align-items: center; margin-bottom: 20px; cursor: grab; }
+.symbol-container span { font-size: 12px; margin-top: 8px; text-transform: uppercase; font-weight: bold; text-align: center; }
+.symbol-container svg { pointer-events: none; }
+
+/* Novo Painel de Camadas */
+.layers-container { width: 100%; margin-top: 10px; border-top: 2px solid #aaa; padding-top: 15px; }
+.layers-title { font-size: 14px; font-weight: bold; color: #2c3e50; margin-bottom: 12px; text-transform: uppercase; text-align: left; }
+.layer-item { display: flex; align-items: center; margin-bottom: 10px; font-size: 13px; font-weight: bold; color: #444; cursor: pointer; }
+.layer-item input { margin-right: 10px; cursor: pointer; width: 16px; height: 16px; accent-color: #2c3e50; }
+
+#main-area { flex-grow: 1; display: flex; flex-direction: column; background-color: #e0e0e0; position: relative; padding: 20px; }
+#toolbar { margin-bottom: 15px; display: flex; gap: 8px; flex-shrink: 0; z-index: 10; flex-wrap: wrap; align-items: center; }
+
+button, .file-label { padding: 8px 12px; background-color: #2c3e50; color: white; border: none; border-radius: 4px; cursor: pointer; transition: background-color 0.2s; font-size: 13px; text-decoration: none; display: inline-block; }
+button:hover, .file-label:hover { background-color: #1a252f; }
+
+#btn-conduite-curvo { background-color: #e67e22; }
+#btn-conduite-reto { background-color: #8e44ad; }
+#btn-conduite-curvo.ativo, #btn-conduite-reto.ativo { background-color: #27ae60; border: 2px solid #fff; }
+#btn-save-project { background-color: #2980b9; font-weight: bold; }
+#btn-export-pdf { background-color: #27ae60; font-weight: bold; }
+
+#canvas-wrapper { flex-grow: 1; background-color: white; border: 2px dashed #999; overflow: hidden; position: relative; display: flex; justify-content: center; align-items: center; }
+
+#modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); z-index: 1000; justify-content: center; align-items: center; }
+#config-modal { background: white; padding: 25px; border-radius: 8px; width: 480px; max-height: 90vh; overflow-y: auto; box-shadow: 0 4px 15px rgba(0,0,0,0.3); border-top: 6px solid #2c3e50; }
+#config-modal h2 { margin-top: 0; font-size: 20px; color: #2c3e50; border-bottom: 1px solid #ccc; padding-bottom: 10px; margin-bottom: 20px; }
+.form-group { margin-bottom: 15px; display: flex; align-items: center; }
+.form-group label { flex-grow: 1; font-weight: bold; color: #333; cursor: pointer; }
+.form-group input[type="text"], .form-group input[type="number"], .form-group input[type="color"] { width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; margin-top: 5px; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 25px; }
+.btn-salvar { background-color: #27ae60; } .btn-salvar:hover { background-color: #2ecc71; }
+.btn-cancelar { background-color: #e74c3c; } .btn-cancelar:hover { background-color: #c0392b; }
+
+.fios-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+.fios-grid div { display: flex; flex-direction: column; align-items: center; }
+.fios-grid label { font-weight: normal; font-size: 11px; margin-bottom: 2px;}
+.fios-grid input { padding: 4px !important; text-align: center; width: 100%; }
+
+.circuito-box { border: 1px solid #bdc3c7; background: #ecf0f1; border-radius: 6px; padding: 10px; margin-bottom: 10px; position: relative; }
+.btn-remover-circ { background: #e74c3c; color: white; border: none; border-radius: 3px; cursor: pointer; padding: 2px 8px; font-weight: bold; }

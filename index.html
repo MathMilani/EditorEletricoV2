@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Editor Elétrico Pro - Reta Auxiliar</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <div id="sidebar">
+        <h3>SÍMBOLOS DOS<br>EQUIPAMENTOS</h3>
+        
+        <div class="symbol-category">Tomadas</div>
+        <div class="symbol-container" draggable="true" data-type="Tomada Baixa">
+            <svg width="40" height="40" viewBox="0 0 100 100"><polygon points="50,20 80,60 20,60" fill="white" stroke="black" stroke-width="3"/><line x1="50" y1="60" x2="50" y2="90" stroke="black" stroke-width="3"/></svg>
+            <span>Tomada Baixa</span>
+        </div>
+        <div class="symbol-container" draggable="true" data-type="Tomada Média">
+            <svg width="40" height="40" viewBox="0 0 100 100"><polygon points="50,20 80,60 50,60" fill="black" stroke="black" stroke-width="3"/><polygon points="50,20 20,60 50,60" fill="white" stroke="black" stroke-width="3"/><line x1="50" y1="60" x2="50" y2="90" stroke="black" stroke-width="3"/></svg>
+            <span>Tomada Média</span>
+        </div>
+        <div class="symbol-container" draggable="true" data-type="Tomada Alta">
+            <svg width="40" height="40" viewBox="0 0 100 100"><polygon points="50,20 80,60 20,60" fill="black" stroke="black" stroke-width="3"/><line x1="50" y1="60" x2="50" y2="90" stroke="black" stroke-width="3"/></svg>
+            <span>Tomada Alta</span>
+        </div>
+
+        <div class="symbol-category">Iluminação</div>
+        <div class="symbol-container" draggable="true" data-type="Lâmpada Teto">
+            <svg width="40" height="40" viewBox="0 0 100 100"><circle cx="50" cy="50" r="45" fill="white" stroke="black" stroke-width="3"/><line x1="5" y1="50" x2="95" y2="50" stroke="black" stroke-width="3"/></svg>
+            <span>Lâmpada de Teto</span>
+        </div>
+
+        <div class="symbol-category">Interruptores</div>
+        <div class="symbol-container" draggable="true" data-type="Interruptor Simples">
+            <svg width="40" height="40" viewBox="0 0 100 100"><rect width="100" height="100" fill="transparent"/><text x="50" y="75" font-size="70" font-family="Arial" text-anchor="middle" fill="black">S</text></svg>
+            <span>Simples</span>
+        </div>
+        <div class="symbol-container" draggable="true" data-type="Interruptor Paralelo">
+            <svg width="40" height="40" viewBox="0 0 100 100"><rect width="100" height="100" fill="transparent"/><text x="50" y="70" font-size="60" font-family="Arial" text-anchor="middle" fill="black">SP</text></svg>
+            <span>Paralelo</span>
+        </div>
+        <div class="symbol-container" draggable="true" data-type="Interruptor Intermediário">
+            <svg width="40" height="40" viewBox="0 0 100 100"><rect width="100" height="100" fill="transparent"/><text x="50" y="70" font-size="60" font-family="Arial" text-anchor="middle" fill="black">SI</text></svg>
+            <span>Intermediário</span>
+        </div>
+
+        <div class="symbol-category">Quadros</div>
+        <div class="symbol-container" draggable="true" data-type="Quadro de Distribuição">
+            <svg width="40" height="40" viewBox="0 0 100 100">
+                <rect x="5" y="10" width="90" height="80" fill="white" stroke="black" stroke-width="3"/>
+                <line x1="5" y1="10" x2="95" y2="90" stroke="black" stroke-width="3"/>
+                <polygon points="5,10 5,90 95,90" fill="black"/>
+            </svg>
+            <span>Quadro QDC</span>
+        </div>
+
+        <div class="layers-container">
+            <div class="layers-title">Camadas (Layers)</div>
+            <label class="layer-item"><input type="checkbox" id="layer-quadros" checked> Quadros</label>
+            <label class="layer-item"><input type="checkbox" id="layer-tomadas" checked> Tomadas</label>
+            <label class="layer-item"><input type="checkbox" id="layer-iluminacao" checked> Iluminação/Cmds</label>
+            <label class="layer-item"><input type="checkbox" id="layer-conduites" checked> Conduítes (Tubos)</label>
+            <label class="layer-item"><input type="checkbox" id="layer-fiacao" checked> Fiação (Simbologia)</label>
+        </div>
+    </div>
+
+    <div id="main-area">
+        <div id="toolbar">
+            <label class="file-label" for="upload-planta">🖼️ Carregar Planta</label>
+            <input type="file" id="upload-planta" accept="image/png, image/jpeg" style="display:none;">
+            
+            <button id="btn-conduite-curvo" title="Cria um conduíte curvado (teto/laje)">Conduíte Curvo</button>
+            <button id="btn-conduite-reto" title="Cria um conduíte ortogonal de 90° (parede/chão)">Conduíte Reto</button>
+            
+            <span style="border-left: 2px solid #aaa; margin: 0 5px; height: 20px;"></span>
+            
+            <button id="btn-save-project" title="Salvar Projeto">💾 Salvar Json</button>
+            <label class="file-label btn-load-project" for="load-project">📂 Abrir Json</label>
+            <input type="file" id="load-project" accept=".json" style="display:none;">
+            <button id="btn-export-pdf" title="Exportar para PDF">📄 Exportar PDF</button>
+
+            <span style="border-left: 2px solid #aaa; margin: 0 5px; height: 20px;"></span>
+
+            <button id="delete-btn" style="background-color: #e74c3c;">Deletar Selecionado</button>
+            <button id="clear-btn">Limpar Tudo</button>
+            <button id="reset-view-btn">Resetar View</button>
+        </div>
+        
+        <div id="canvas-wrapper">
+            <canvas id="planta-canvas"></canvas>
+            <div id="placeholder-text" style="position: absolute; font-size: 24px; color: #666; pointer-events: none;">
+                PLANTA ANEXADA PELO USUARIO
+            </div>
+        </div>
+    </div>
+
+    <div id="modal-overlay">
+        <div id="config-modal">
+            <h2 id="modal-title">Configuração</h2>
+            
+            <div id="campos-tomada" style="display: none;">
+                <div class="form-group"><input type="checkbox" id="conf-alta-potencia" style="margin-right: 10px; width: 18px; height: 18px;"><label>Tomada de alta potência?</label></div>
+                <div class="form-group"><input type="checkbox" id="conf-220v" style="margin-right: 10px; width: 18px; height: 18px;"><label>220V?</label></div>
+                <div style="margin-bottom: 15px;"><label style="font-weight: bold; color: #333;">Nome (FE, etc):</label><input type="text" id="conf-nome"></div>
+                <div style="margin-bottom: 15px;"><label style="font-weight: bold; color: #333;">Número de tomadas no ponto:</label><input type="number" id="conf-numero-tomadas" min="1" value="1"></div>
+            </div>
+
+            <div id="campos-comum-id" style="display: none; margin-bottom: 15px;"><label style="font-weight: bold; color: #333;">ID / Comando (Letra):</label><input type="text" id="conf-id-comando" placeholder="Ex: a, b, c..."></div>
+            <div id="campos-potencia" style="display: none; margin-bottom: 15px;"><label style="font-weight: bold; color: #333;">Potência (Abaixo da linha):</label><input type="text" id="conf-lamp-potencia" placeholder="Ex: 100, 60, 15W..."></div>
+            <div id="campo-circuito-container" style="margin-bottom: 15px;"><label style="font-weight: bold; color: #333;">Circuito (Número):</label><input type="number" id="conf-circuito" placeholder="Ex: 1, 2..."></div>
+
+            <div id="campos-conduite" style="display: none;">
+                <div style="display: flex; gap: 10px; margin-bottom: 15px;">
+                    <div style="flex: 1;"><label style="font-weight: bold; color: #333; font-size: 13px;">Cor:</label><input type="color" id="conf-cor-conduite" style="height: 35px; cursor: pointer; width: 100%;"></div>
+                    <div style="flex: 1;"><label style="font-weight: bold; color: #333; font-size: 13px;">Escala Fiação:</label><input type="number" id="conf-escala-fios" step="0.1" min="0.2" max="3.0" value="1.0" style="height: 35px; width: 100%;"></div>
+                </div>
+
+                <div style="margin-bottom: 15px; background: #f1f2f6; border: 1px solid #bdc3c7; padding: 10px; border-radius: 6px;">
+                    <div style="display: flex; align-items: center; gap: 10px;">
+                        <input type="checkbox" id="conf-has-chamada" style="width: 18px; height: 18px; cursor: pointer;">
+                        <label for="conf-has-chamada" style="font-weight: bold; color: #2c3e50; cursor: pointer; margin: 0;">Usar Linha Auxiliar (Chamada)?</label>
+                    </div>
+                    <div id="chamada-cor-container" style="display: none; margin-top: 10px; border-top: 1px solid #ccc; padding-top: 10px;">
+                        <label style="font-size: 12px; font-weight: bold;">Cor da Linha Auxiliar:</label>
+                        <input type="color" id="conf-cor-chamada" value="#999999" style="height: 30px; width: 100%; cursor: pointer;">
+                    </div>
+                </div>
+                
+                <label style="font-weight: bold; color: #333;">Circuitos neste conduíte:</label>
+                <div id="lista-circuitos" style="margin-top: 10px; max-height: 250px; overflow-y: auto; padding-right: 5px;"></div>
+                <button type="button" id="btn-add-circuito" style="background-color: #2980b9; color: white; border: none; padding: 8px; border-radius: 4px; cursor: pointer; width: 100%; font-weight: bold; margin-bottom: 20px;">+ Adicionar Circuito</button>
+                <button type="button" id="btn-deletar-conduite" style="background-color: #e74c3c; color: white; border: none; padding: 10px; border-radius: 4px; cursor: pointer; width: 100%; font-weight: bold;">🗑️ DELETAR ESTE CONDUÍTE</button>
+            </div>
+
+            <div class="modal-actions" id="modal-botoes-padrao">
+                <button class="btn-cancelar" id="btn-cancelar">Cancelar</button>
+                <button class="btn-salvar" id="btn-salvar">Salvar</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="globals.js"></script>
+    <script src="logic.js"></script>
+    <script src="ui.js"></script>
+</body>
+</html>
