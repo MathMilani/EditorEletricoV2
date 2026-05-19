@@ -50,6 +50,7 @@ function applyLayersVisibility() {
 
     listaConduites.forEach(c => {
         const temFios = temFiosFiltradosParaConduite(c);
+
         if (c.linha) c.linha.set('visible', showConduites);
         if (c.hitbox) c.hitbox.set('visible', showConduites);
         if (c.chamadaLine) c.chamadaLine.set('visible', showConduites && showFiacao && c.hasChamada && temFios);
@@ -70,69 +71,12 @@ function getConnectionPointOnEdge(origem, dPt) {
     return p;
 }
 
-// NOVO: Calcula o ponto perpendicular perfeito na espinha de um conduíte
-function getClosestPointOnConduit(c, pt) {
-    if (!c || !c.origem || !c.destino) return pt;
-    
-    const p1 = getTrueCenter(c.origem);
-    const p2 = c.destino.isConduiteHitbox ? getTrueCenter(c.destino.conduitRef.origem) : getTrueCenter(c.destino); 
-    
-    const midX = (p1.x+p2.x)/2; const midY = (p1.y+p2.y)/2;
-    let minDist = Infinity;
-    let bestPt = {x: p1.x, y: p1.y};
-
-    for (let t = 0.0; t <= 1.0; t += 0.02) {
-        let px, py;
-        if (c.tipo === 'curvo') {
-            const cx = c.handle ? c.handle.left : midX + ((p2.y - p1.y) * 0.2);
-            const cy = c.handle ? c.handle.top : midY - ((p2.x - p1.x) * 0.2);
-            px = Math.pow(1-t, 2)*p1.x + 2*(1-t)*t*cx + Math.pow(t, 2)*p2.x;
-            py = Math.pow(1-t, 2)*p1.y + 2*(1-t)*t*cy + Math.pow(t, 2)*p2.y;
-        } else if (c.tipo === 'subterraneo') {
-            px = p1.x + (p2.x - p1.x) * t;
-            py = p1.y + (p2.y - p1.y) * t;
-        } else {
-            const hx = c.handle ? c.handle.left : midX; const hy = c.handle ? c.handle.top : midY;
-            let pts = c.eixo === 'X' ? [{x:p1.x, y:p1.y}, {x:hx, y:p1.y}, {x:hx, y:p2.y}, {x:p2.x, y:p2.y}] : [{x:p1.x, y:p1.y}, {x:p1.x, y:hy}, {x:p2.x, y:hy}, {x:p2.x, y:p2.y}];
-            let l1 = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y);
-            let l2 = Math.hypot(pts[2].x - pts[1].x, pts[2].y - pts[1].y);
-            let l3 = Math.hypot(pts[3].x - pts[2].x, pts[3].y - pts[2].y);
-            let totalL = l1 + l2 + l3 || 1; let targetL = t * totalL;
-
-            if (targetL <= l1) {
-                let ratio = l1 === 0 ? 0 : targetL / l1;
-                px = pts[0].x + (pts[1].x - pts[0].x) * ratio; py = pts[0].y + (pts[1].y - pts[0].y) * ratio;
-            } else if (targetL <= l1 + l2) {
-                let ratio = l2 === 0 ? 0 : (targetL - l1) / l2;
-                px = pts[1].x + (pts[2].x - pts[1].x) * ratio; py = pts[1].y + (pts[2].y - pts[1].y) * ratio;
-            } else {
-                let ratio = l3 === 0 ? 0 : (targetL - l1 - l2) / l3;
-                px = pts[2].x + (pts[3].x - pts[2].x) * ratio; py = pts[2].y + (pts[3].y - pts[2].y) * ratio;
-            }
-        }
-        let d = Math.hypot(pt.x - px, pt.y - py);
-        if (d < minDist) { minDist = d; bestPt = {x: px, y: py}; }
-    }
-    return bestPt;
-}
-
 function atualizarPosicaoConduites() {
     listaConduites.forEach(c => {
         if (!c.origem || !c.destino || !c.linha) return;
 
-        let p1 = getTrueCenter(c.origem);
-        let p2;
-
-        // NOVO: Resolve a posição P2 permitindo conectar na linha de outro conduíte
-        if (c.destino.isConduiteHitbox) {
-            p2 = getClosestPointOnConduit(c.destino.conduitRef, p1);
-            if (c.origem.tipoEquipamento?.includes('Interruptor')) p1 = getConnectionPointOnEdge(c.origem, p2);
-            p2 = getClosestPointOnConduit(c.destino.conduitRef, p1); // Recalcula mais fino
-        } else {
-            p2 = getTrueCenter(c.destino);
-            if (c.origem.tipoEquipamento?.includes('Interruptor')) p1 = getConnectionPointOnEdge(c.origem, p2);
-            if (c.destino.tipoEquipamento?.includes('Interruptor')) p2 = getConnectionPointOnEdge(c.destino, p1);
-        }
+        const p1 = c.origem.tipoEquipamento?.includes('Interruptor') ? getConnectionPointOnEdge(c.origem, getTrueCenter(c.destino)) : getTrueCenter(c.origem);
+        const p2 = c.destino.tipoEquipamento?.includes('Interruptor') ? getConnectionPointOnEdge(c.destino, getTrueCenter(c.origem)) : getTrueCenter(c.destino);
         
         let pathStr = '', cx, cy, baseX, baseY;
         const midX = (p1.x+p2.x)/2; const midY = (p1.y+p2.y)/2;
@@ -228,7 +172,7 @@ function atualizarPosicaoConduites() {
                 return !circuitoFiltroGlobal || numStr === circuitoFiltroGlobal || numStr === '';
             });
             
-            const esc = c.escalaFios || 1.0; const fioLen = 30 * esc; const spacing = 8 * esc; const gapC = 15 * esc; 
+            const esc = c.escalaFios || 1.0; const fioLen = 30 * esc; const spacing = 12 * esc; const gapC = 12 * esc; 
             let totLen = 0; circuitosFiltrados.forEach(cir => totLen += (cir.fase+cir.neutro+cir.retorno+cir.terra)*spacing + gapC);
             totLen -= gapC; 
 
@@ -239,6 +183,7 @@ function atualizarPosicaoConduites() {
                 if ((circ.fase+circ.neutro+circ.retorno+circ.terra) === 0) return;
                 let sPos = pos, d = "";
                 
+                // NOVO: Lógica que avalia se a cor deste fio deve ser vermelha (Destaque)
                 const numStr = circ.numero.toString().trim();
                 const isDestacado = (circuitoFiltroGlobal !== '') && (numStr === circuitoFiltroGlobal);
                 const corTraco = isDestacado ? '#e74c3c' : (c.hasChamada ? corChamadaFinal : c.cor);
@@ -285,11 +230,14 @@ function atualizarPosicaoConduites() {
                 if (circ.numero && circ.numero.toString().trim() !== '') {
                     const ldMid = getLData((sPos + pos - spacing) / 2);
                     let tA = ldMid.angle; if (tA > 90 || tA < -90) tA += 180; 
+                    
+                    // Aplica cor do texto (Vermelho de Destaque ou Preto Normal)
                     const textObj = new fabric.Text(circ.numero.toString(), { fontSize: 14 * esc, fontFamily: 'Arial', fill: corTexto, left: ldMid.px - ldMid.nx * 25 * esc, top: ldMid.py - ldMid.ny * 25 * esc, originX: 'center', originY: 'center', angle: tA, selectable: false, evented: false, isFiacao: true, visible: visibilidadeFiacao });
                     canvas.add(textObj); c.grupoFiacao.push(textObj);
                 }
 
                 if (d !== "") {
+                    // Aplica cor dos traços (Vermelho de Destaque, Cor Chamada ou Cor do Conduíte)
                     const pathFiacao = new fabric.Path(d, { fill: 'transparent', stroke: corTraco, strokeWidth: 1.5, strokeUniform: true, selectable: false, evented: false, isFiacao: true, objectCaching: false, visible: visibilidadeFiacao });
                     canvas.add(pathFiacao); canvas.bringToFront(pathFiacao); c.grupoFiacao.push(pathFiacao);
                 }
