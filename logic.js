@@ -25,10 +25,12 @@ function gerirVisibilidadeAncoras() {
     listaConduites.forEach(c => {
         const isSelected = !!c.isAtivo; 
         const temFios = temFiosFiltradosParaConduite(c);
+        const isBranchReto = c.tipo === 'reto' && c.destino && c.destino.isConduiteHitbox;
 
-        if (c.handle) c.handle.set('visible', showConduites && isSelected);
+        if (c.handle) c.handle.set('visible', showConduites && isSelected && !isBranchReto);
         if (c.chamadaHandle) c.chamadaHandle.set('visible', showConduites && showFiacao && c.hasChamada && isSelected && temFios);
         if (c.chamadaBaseHandle) c.chamadaBaseHandle.set('visible', showConduites && showFiacao && c.hasChamada && isSelected && temFios);
+        if (c.branchAnchor) c.branchAnchor.set('visible', showConduites && isSelected);
     });
     canvas.requestRenderAll();
 }
@@ -50,7 +52,6 @@ function applyLayersVisibility() {
 
     listaConduites.forEach(c => {
         const temFios = temFiosFiltradosParaConduite(c);
-
         if (c.linha) c.linha.set('visible', showConduites);
         if (c.hitbox) c.hitbox.set('visible', showConduites);
         if (c.chamadaLine) c.chamadaLine.set('visible', showConduites && showFiacao && c.hasChamada && temFios);
@@ -71,16 +72,113 @@ function getConnectionPointOnEdge(origem, dPt) {
     return p;
 }
 
+function getPointOnConduitAtT(c, t) {
+    if (!c || !c.origem || !c.destino) return { x: 0, y: 0 };
+    const p1 = getTrueCenter(c.origem);
+    const p2 = c.destino.isConduiteHitbox ? getTrueCenter(c.destino.conduitRef.origem) : getTrueCenter(c.destino);
+    const midX = (p1.x + p2.x) / 2; const midY = (p1.y + p2.y) / 2;
+
+    if (c.tipo === 'curvo') {
+        const cx = c.handle ? c.handle.left : midX + ((p2.y - p1.y) * 0.2);
+        const cy = c.handle ? c.handle.top : midY - ((p2.x - p1.x) * 0.2);
+        return {
+            x: Math.pow(1 - t, 2) * p1.x + 2 * (1 - t) * t * cx + Math.pow(t, 2) * p2.x,
+            y: Math.pow(1 - t, 2) * p1.y + 2 * (1 - t) * t * cy + Math.pow(t, 2) * p2.y
+        };
+    } else if (c.tipo === 'subterraneo') {
+        return { x: p1.x + (p2.x - p1.x) * t, y: p1.y + (p2.y - p1.y) * t };
+    } else { 
+        const hx = c.handle ? c.handle.left : midX; const hy = c.handle ? c.handle.top : midY;
+        let pts = c.eixo === 'X' ? [{ x: p1.x, y: p1.y }, { x: hx, y: p1.y }, { x: hx, y: p2.y }, { x: p2.x, y: p2.y }] : [{ x: p1.x, y: p1.y }, { x: p1.x, y: hy }, { x: p2.x, y: hy }, { x: p2.x, y: p2.y }];
+        let l1 = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y);
+        let l2 = Math.hypot(pts[2].x - pts[1].x, pts[2].y - pts[1].y);
+        let l3 = Math.hypot(pts[3].x - pts[2].x, pts[3].y - pts[2].y);
+        let totalL = l1 + l2 + l3 || 1; let targetL = t * totalL;
+
+        if (targetL <= l1) {
+            let ratio = l1 === 0 ? 0 : targetL / l1; return { x: pts[0].x + (pts[1].x - pts[0].x) * ratio, y: pts[0].y + (pts[1].y - pts[0].y) * ratio };
+        } else if (targetL <= l1 + l2) {
+            let ratio = l2 === 0 ? 0 : (targetL - l1) / l2; return { x: pts[1].x + (pts[2].x - pts[1].x) * ratio, y: pts[1].y + (pts[2].y - pts[1].y) * ratio };
+        } else {
+            let ratio = l3 === 0 ? 0 : (targetL - l1 - l2) / l3; return { x: pts[2].x + (pts[3].x - pts[2].x) * ratio, y: pts[2].y + (pts[3].y - pts[2].y) * ratio };
+        }
+    }
+}
+
+// CORREÇÃO GEOMÉTRICA DEFINITIVA: Projeta ortogonalmente sobre os 3 segmentos do conduíte pai
+function getClosestPointOnConduit(c, pt) {
+    if (!c || !c.origem || !c.destino) return pt;
+    
+    const p1 = getTrueCenter(c.origem);
+    const p2 = c.destino.isConduiteHitbox ? getTrueCenter(c.destino.conduitRef.origem) : getTrueCenter(c.destino); 
+    const midX = (p1.x+p2.x)/2; const midY = (p1.y+p2.y)/2;
+
+    if (c.tipo === 'reto') {
+        const hx = c.handle ? c.handle.left : midX; 
+        const hy = c.handle ? c.handle.top : midY;
+        let pts = c.eixo === 'X' ? 
+            [{x:p1.x, y:p1.y}, {x:hx, y:p1.y}, {x:hx, y:p2.y}, {x:p2.x, y:p2.y}] : 
+            [{x:p1.x, y:p1.y}, {x:p1.x, y:hy}, {x:p2.x, y:hy}, {x:p2.x, y:p2.y}];
+        
+        // Função matemática que trava o ponto perfeitamente a 90 graus na parede da linha
+        function proj(p, a, b) {
+            const dx = b.x - a.x, dy = b.y - a.y;
+            const len2 = dx*dx + dy*dy;
+            if (len2 === 0) return {x: a.x, y: a.y};
+            let t = ((p.x - a.x)*dx + (p.y - a.y)*dy) / len2;
+            t = Math.max(0, Math.min(1, t)); 
+            return {x: a.x + t*dx, y: a.y + t*dy};
+        }
+        
+        let bestPt = pt;
+        let minDist = Infinity;
+        for (let i=0; i<3; i++) {
+            let projected = proj(pt, pts[i], pts[i+1]);
+            let d = Math.hypot(pt.x - projected.x, pt.y - projected.y);
+            if (d < minDist) { minDist = d; bestPt = projected; }
+        }
+        return bestPt;
+    } 
+    
+    // Para curvos e subterrâneos mantém o cálculo contínuo
+    let bestPt = pt; let minDist = Infinity;
+    for (let t = 0.0; t <= 1.0; t += 0.005) {
+        let p = getPointOnConduitAtT(c, t);
+        let d = Math.hypot(pt.x - p.x, pt.y - p.y);
+        if (d < minDist) { minDist = d; bestPt = p; }
+    }
+    return bestPt;
+}
+
 function atualizarPosicaoConduites() {
     listaConduites.forEach(c => {
         if (!c.origem || !c.destino || !c.linha) return;
 
-        const p1 = c.origem.tipoEquipamento?.includes('Interruptor') ? getConnectionPointOnEdge(c.origem, getTrueCenter(c.destino)) : getTrueCenter(c.origem);
-        const p2 = c.destino.tipoEquipamento?.includes('Interruptor') ? getConnectionPointOnEdge(c.destino, getTrueCenter(c.origem)) : getTrueCenter(c.destino);
+        let p1 = getTrueCenter(c.origem);
+        let p2;
+
+        if (c.destino.isConduiteHitbox) {
+            if (c.tBranch !== undefined) {
+                p2 = getPointOnConduitAtT(c.destino.conduitRef, c.tBranch);
+            } else {
+                p2 = getClosestPointOnConduit(c.destino.conduitRef, p1);
+            }
+            if (c.origem.tipoEquipamento?.includes('Interruptor')) p1 = getConnectionPointOnEdge(c.origem, p2);
+            if (c.tBranch !== undefined) {
+                p2 = getPointOnConduitAtT(c.destino.conduitRef, c.tBranch);
+            } else {
+                p2 = getClosestPointOnConduit(c.destino.conduitRef, p1);
+            }
+        } else {
+            p2 = getTrueCenter(c.destino);
+            if (c.origem.tipoEquipamento?.includes('Interruptor')) p1 = getConnectionPointOnEdge(c.origem, p2);
+            if (c.destino.tipoEquipamento?.includes('Interruptor')) p2 = getConnectionPointOnEdge(c.destino, p1);
+        }
         
         let pathStr = '', cx, cy, baseX, baseY;
         const midX = (p1.x+p2.x)/2; const midY = (p1.y+p2.y)/2;
         let tChamada = c.posChamada !== undefined ? c.posChamada : 0.5;
+        const isBranchReto = c.tipo === 'reto' && c.destino && c.destino.isConduiteHitbox;
 
         if (c.tipo === 'curvo') {
             cx = c.handle ? c.handle.left : midX + ((p2.y - p1.y) * 0.2);
@@ -89,16 +187,33 @@ function atualizarPosicaoConduites() {
             if (c.handle) { c.handle.set({ lockMovementX: false, lockMovementY: false, fill: c.cor }); c.handle.setCoords(); }
             baseX = Math.pow(1-tChamada, 2)*p1.x + 2*(1-tChamada)*tChamada*cx + Math.pow(tChamada, 2)*p2.x;
             baseY = Math.pow(1-tChamada, 2)*p1.y + 2*(1-tChamada)*tChamada*cy + Math.pow(tChamada, 2)*p2.y;
+            
         } else if (c.tipo === 'subterraneo') {
             pathStr = `M ${p1.x} ${p1.y} L ${p2.x} ${p2.y}`;
-            if (c.handle) { c.handle.set({ left: midX, top: midY, lockMovementX: true, lockMovementY: true, fill: c.cor }); c.handle.setCoords(); }
+            if (c.handle) { 
+                c.handle.set({ left: midX, top: midY, lockMovementX: true, lockMovementY: true, fill: c.cor }); 
+                c.handle.setCoords();
+            }
             baseX = p1.x + (p2.x - p1.x) * tChamada;
             baseY = p1.y + (p2.y - p1.y) * tChamada;
+            
+        } else if (isBranchReto) {
+            // BLOQUEIO FINAL DE DIAGONAIS: Constrói a ramificação forçosamente através de vértices ortogonais.
+            // Se o símbolo estiver alinhado, ele sobrepõe e parece uma reta única (como desejado).
+            if (c.eixo === 'X') { 
+                pathStr = `M ${p1.x} ${p1.y} L ${p1.x} ${p2.y} L ${p2.x} ${p2.y}`; 
+            } else { 
+                pathStr = `M ${p1.x} ${p1.y} L ${p2.x} ${p1.y} L ${p2.x} ${p2.y}`; 
+            }
+            if (c.handle) c.handle.set({ visible: false }); 
+            baseX = (p1.x + p2.x) / 2;
+            baseY = (p1.y + p2.y) / 2;
+
         } else {
             const hx = c.handle ? c.handle.left : midX; const hy = c.handle ? c.handle.top : midY;
             if (c.eixo === 'X') { pathStr = `M ${p1.x} ${p1.y} L ${hx} ${p1.y} L ${hx} ${p2.y} L ${p2.x} ${p2.y}`; } 
             else { pathStr = `M ${p1.x} ${p1.y} L ${p1.x} ${hy} L ${p2.x} ${hy} L ${p2.x} ${p2.y}`; }
-            if (c.handle) { c.handle.set({ fill: c.cor }); c.handle.setCoords(); }
+            if (c.handle) { c.handle.set({ lockMovementX: false, lockMovementY: false, fill: c.cor }); c.handle.setCoords(); }
 
             let pts = c.eixo === 'X' ? [{x:p1.x, y:p1.y}, {x:hx, y:p1.y}, {x:hx, y:p2.y}, {x:p2.x, y:p2.y}] : [{x:p1.x, y:p1.y}, {x:p1.x, y:hy}, {x:p2.x, y:hy}, {x:p2.x, y:p2.y}];
             let l1 = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y);
@@ -107,14 +222,11 @@ function atualizarPosicaoConduites() {
             let totalL = l1 + l2 + l3 || 1; let targetL = tChamada * totalL;
 
             if (targetL <= l1) {
-                let ratio = l1 === 0 ? 0 : targetL / l1;
-                baseX = pts[0].x + (pts[1].x - pts[0].x) * ratio; baseY = pts[0].y + (pts[1].y - pts[0].y) * ratio;
+                let ratio = l1 === 0 ? 0 : targetL / l1; baseX = pts[0].x + (pts[1].x - pts[0].x) * ratio; baseY = pts[0].y + (pts[1].y - pts[0].y) * ratio;
             } else if (targetL <= l1 + l2) {
-                let ratio = l2 === 0 ? 0 : (targetL - l1) / l2;
-                baseX = pts[1].x + (pts[2].x - pts[1].x) * ratio; baseY = pts[1].y + (pts[2].y - pts[1].y) * ratio;
+                let ratio = l2 === 0 ? 0 : (targetL - l1) / l2; baseX = pts[1].x + (pts[2].x - pts[1].x) * ratio; baseY = pts[1].y + (pts[2].y - pts[1].y) * ratio;
             } else {
-                let ratio = l3 === 0 ? 0 : (targetL - l1 - l2) / l3;
-                baseX = pts[2].x + (pts[3].x - pts[2].x) * ratio; baseY = pts[2].y + (pts[3].y - pts[2].y) * ratio;
+                let ratio = l3 === 0 ? 0 : (targetL - l1 - l2) / l3; baseX = pts[2].x + (pts[3].x - pts[2].x) * ratio; baseY = pts[2].y + (pts[3].y - pts[2].y) * ratio;
             }
         }
 
@@ -124,6 +236,21 @@ function atualizarPosicaoConduites() {
         const tracejado = c.tipo === 'subterraneo' ? [8, 5] : null;
         c.linha.set({...props, stroke: c.cor, fill: 'transparent', strokeDashArray: tracejado}); c.linha.setCoords();
         if (c.hitbox) { c.hitbox.set({...props, fill: 'transparent'}); c.hitbox.setCoords(); }
+
+        if (c.destino.isConduiteHitbox && !isBranchReto) {
+            if (!c.branchAnchor) {
+                c.branchAnchor = new fabric.Rect({
+                    left: p2.x, top: p2.y, width: 10, height: 10, fill: '#3498db', stroke: '#fff', strokeWidth: 2,
+                    originX: 'center', originY: 'center', hasControls: false, hasBorders: false,
+                    isBranchAnchor: true, hoverCursor: 'pointer', id: 'ba_' + Date.now(), selectable: true
+                });
+                c.branchAnchor.conduitRef = c; canvas.add(c.branchAnchor);
+            }
+            c.branchAnchor.set({ left: p2.x, top: p2.y }); c.branchAnchor.setCoords();
+            c.branchAnchor.set('visible', c.handle ? c.handle.visible : false);
+        } else {
+            if (c.branchAnchor) { canvas.remove(c.branchAnchor); c.branchAnchor = null; }
+        }
 
         const corChamadaFinal = c.corChamada || '#555555';
         const temFios = temFiosFiltradosParaConduite(c);
@@ -153,7 +280,6 @@ function atualizarPosicaoConduites() {
                 c.chamadaLine.set({ path: ncp.path, stroke: corChamadaFinal, width: ncp.width, height: ncp.height, pathOffset: ncp.pathOffset, left: ncp.left, top: ncp.top });
                 c.chamadaLine.setCoords();
             }
-            
             const sC = document.getElementById('layer-conduites').checked;
             const sF = document.getElementById('layer-fiacao').checked;
             c.chamadaLine.set('visible', sC && sF && c.hasChamada && temFios);
@@ -172,7 +298,11 @@ function atualizarPosicaoConduites() {
                 return !circuitoFiltroGlobal || numStr === circuitoFiltroGlobal || numStr === '';
             });
             
-            const esc = c.escalaFios || 1.0; const fioLen = 30 * esc; const spacing = 12 * esc; const gapC = 12 * esc; 
+            const esc = c.escalaFios || 1.0;
+            const fioLen = 30 * esc;
+            const spacing = 12 * esc;
+            const gapC = 12 * esc; 
+
             let totLen = 0; circuitosFiltrados.forEach(cir => totLen += (cir.fase+cir.neutro+cir.retorno+cir.terra)*spacing + gapC);
             totLen -= gapC; 
 
@@ -183,7 +313,6 @@ function atualizarPosicaoConduites() {
                 if ((circ.fase+circ.neutro+circ.retorno+circ.terra) === 0) return;
                 let sPos = pos, d = "";
                 
-                // NOVO: Lógica que avalia se a cor deste fio deve ser vermelha (Destaque)
                 const numStr = circ.numero.toString().trim();
                 const isDestacado = (circuitoFiltroGlobal !== '') && (numStr === circuitoFiltroGlobal);
                 const corTraco = isDestacado ? '#e74c3c' : (c.hasChamada ? corChamadaFinal : c.cor);
@@ -203,7 +332,7 @@ function atualizarPosicaoConduites() {
                         const tx = 2*(1-t)*(cx - p1.x) + 2*t*(p2.x - cx); const ty = 2*(1-t)*(cy - p1.y) + 2*t*(p2.y - cy);
                         const tL = Math.hypot(tx, ty) || 1;
                         return { px, py, dirX: tx/tL, dirY: ty/tL, nx: -ty/tL, ny: tx/tL, angle: Math.atan2(ty, tx)*(180/Math.PI) };
-                    } else if (c.tipo === 'subterraneo') {
+                    } else if (c.tipo === 'subterraneo' || isBranchReto) {
                         const dx = p2.x - p1.x; const dy = p2.y - p1.y;
                         const dist = Math.hypot(dx, dy) || 1; const dirX = dx / dist; const dirY = dy / dist;
                         return { px: baseX + currP*dirX, py: baseY + currP*dirY, dirX, dirY, nx: -dirY, ny: dirX, angle: Math.atan2(dy, dx)*(180/Math.PI) };
@@ -230,14 +359,11 @@ function atualizarPosicaoConduites() {
                 if (circ.numero && circ.numero.toString().trim() !== '') {
                     const ldMid = getLData((sPos + pos - spacing) / 2);
                     let tA = ldMid.angle; if (tA > 90 || tA < -90) tA += 180; 
-                    
-                    // Aplica cor do texto (Vermelho de Destaque ou Preto Normal)
                     const textObj = new fabric.Text(circ.numero.toString(), { fontSize: 14 * esc, fontFamily: 'Arial', fill: corTexto, left: ldMid.px - ldMid.nx * 25 * esc, top: ldMid.py - ldMid.ny * 25 * esc, originX: 'center', originY: 'center', angle: tA, selectable: false, evented: false, isFiacao: true, visible: visibilidadeFiacao });
-                    canvas.add(textObj); c.grupoFiacao.push(textObj);
+                    canvas.add(textObj); canvas.bringToFront(textObj); c.grupoFiacao.push(textObj);
                 }
 
                 if (d !== "") {
-                    // Aplica cor dos traços (Vermelho de Destaque, Cor Chamada ou Cor do Conduíte)
                     const pathFiacao = new fabric.Path(d, { fill: 'transparent', stroke: corTraco, strokeWidth: 1.5, strokeUniform: true, selectable: false, evented: false, isFiacao: true, objectCaching: false, visible: visibilidadeFiacao });
                     canvas.add(pathFiacao); canvas.bringToFront(pathFiacao); c.grupoFiacao.push(pathFiacao);
                 }
