@@ -20,13 +20,10 @@ addEvent('conf-has-chamada', 'change', e => {
     if(container) container.style.display = e.target.checked ? 'block' : 'none';
 });
 
-// NOVO: Injeção do Menu de Filtro direto nas Camadas
 const layersContainer = document.querySelector('.layers-container');
 if (layersContainer) {
     const filterDiv = document.createElement('div');
-    filterDiv.style.marginTop = '15px';
-    filterDiv.style.paddingTop = '15px';
-    filterDiv.style.borderTop = '1px solid #ccc';
+    filterDiv.style.marginTop = '15px'; filterDiv.style.paddingTop = '15px'; filterDiv.style.borderTop = '1px solid #ccc';
     filterDiv.innerHTML = `
         <div style="font-size: 13px; font-weight: bold; margin-bottom: 5px; color: #2c3e50;">🔍 Filtrar Fiação por Circuito:</div>
         <input type="text" id="filtro-circuito" placeholder="Ex: 1, 2, A..." style="width: 100%; padding: 6px; border: 1px solid #bdc3c7; border-radius: 4px; box-sizing: border-box; font-family: Arial;">
@@ -38,17 +35,14 @@ if (layersContainer) {
         circuitoFiltroGlobal = e.target.value.trim();
         const btn = document.getElementById('btn-limpar-filtro');
         if(btn) btn.style.display = circuitoFiltroGlobal ? 'block' : 'none';
-        atualizarPosicaoConduites();
-        applyLayersVisibility(); // Garante que as âncoras se adequem
+        atualizarPosicaoConduites(); applyLayersVisibility(); 
     });
 
     addEvent('btn-limpar-filtro', 'click', () => {
         const input = document.getElementById('filtro-circuito');
-        if(input) input.value = '';
-        circuitoFiltroGlobal = '';
+        if(input) input.value = ''; circuitoFiltroGlobal = '';
         document.getElementById('btn-limpar-filtro').style.display = 'none';
-        atualizarPosicaoConduites();
-        applyLayersVisibility();
+        atualizarPosicaoConduites(); applyLayersVisibility();
     });
 }
 
@@ -118,48 +112,42 @@ canvas.on('object:modified', function(e) {
     atualizarPosicaoConduites();
 });
 
+// MOTOR DE ARRASTO: Controla o deslizamento tanto das chamadas elétricas quanto do Anchor de Árvore Azul
 canvas.on('object:moving', function(e) {
     const obj = e.target;
-    if (obj && obj.isChamadaBaseHandle) {
+    if (!obj) return;
+
+    // NOVO: Arrasto dinâmico da nova âncora azul de ramificações curvas/subterrâneas
+    if (obj.isBranchAnchor) {
+        const c = obj.conduitRef;
+        const p1 = getTrueCenter(c.origem);
+        const p2 = c.destino.isConduiteHitbox ? getTrueCenter(c.destino.conduitRef.origem) : getTrueCenter(c.destino);
+        const parentC = c.destino.conduitRef;
+
+        let bestT = c.tBranch || 0.5;
+        let minDist = Infinity;
+
+        // Amostra a espinha do conduíte pai para colar o quadrado perfeitamente nele
+        for (let t = 0.0; t <= 1.0; t += 0.005) {
+            let p = getPointOnConduitAtT(parentC, t);
+            let d = Math.hypot(obj.left - p.x, obj.top - p.y);
+            if (d < minDist) { minDist = d; bestT = t; }
+        }
+        c.tBranch = bestT;
+        atualizarPosicaoConduites();
+        return;
+    }
+
+    if (obj.isChamadaBaseHandle) {
         const c = obj.conduitRef;
         const p1 = c.origem.tipoEquipamento?.includes('Interruptor') ? getConnectionPointOnEdge(c.origem, getTrueCenter(c.destino)) : getTrueCenter(c.origem);
-        const p2 = c.destino.tipoEquipamento?.includes('Interruptor') ? getConnectionPointOnEdge(c.destino, getTrueCenter(c.origem)) : getTrueCenter(c.destino);
-        const midX = (p1.x+p2.x)/2; const midY = (p1.y+p2.y)/2;
-
+        const p2 = c.destino.isConduiteHitbox ? getTrueCenter(c.destino.conduitRef.origem) : getTrueCenter(c.destino);
         let bestT = c.posChamada || 0.5;
         let minDist = Infinity;
 
         for (let t = 0.0; t <= 1.0; t += 0.01) {
-            let px, py;
-            if (c.tipo === 'curvo') {
-                const cx = c.handle ? c.handle.left : midX + ((p2.y - p1.y) * 0.2);
-                const cy = c.handle ? c.handle.top : midY - ((p2.x - p1.x) * 0.2);
-                px = Math.pow(1-t, 2)*p1.x + 2*(1-t)*t*cx + Math.pow(t, 2)*p2.x;
-                py = Math.pow(1-t, 2)*p1.y + 2*(1-t)*t*cy + Math.pow(t, 2)*p2.y;
-            } else if (c.tipo === 'subterraneo') {
-                px = p1.x + (p2.x - p1.x) * t;
-                py = p1.y + (p2.y - p1.y) * t;
-            } else {
-                const hx = c.handle ? c.handle.left : midX; const hy = c.handle ? c.handle.top : midY;
-                let pts = c.eixo === 'X' ? [{x:p1.x, y:p1.y}, {x:hx, y:p1.y}, {x:hx, y:p2.y}, {x:p2.x, y:p2.y}] : [{x:p1.x, y:p1.y}, {x:p1.x, y:hy}, {x:p2.x, y:hy}, {x:p2.x, y:p2.y}];
-                let l1 = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y);
-                let l2 = Math.hypot(pts[2].x - pts[1].x, pts[2].y - pts[1].y);
-                let l3 = Math.hypot(pts[3].x - pts[2].x, pts[3].y - pts[2].y);
-                let totalL = l1 + l2 + l3 || 1;
-                let targetL = t * totalL;
-
-                if (targetL <= l1) {
-                    let ratio = l1 === 0 ? 0 : targetL / l1;
-                    px = pts[0].x + (pts[1].x - pts[0].x) * ratio; py = pts[0].y + (pts[1].y - pts[0].y) * ratio;
-                } else if (targetL <= l1 + l2) {
-                    let ratio = l2 === 0 ? 0 : (targetL - l1) / l2;
-                    px = pts[1].x + (pts[2].x - pts[1].x) * ratio; py = pts[1].y + (pts[2].y - pts[1].y) * ratio;
-                } else {
-                    let ratio = l3 === 0 ? 0 : (targetL - l1 - l2) / l3;
-                    px = pts[2].x + (pts[3].x - pts[2].x) * ratio; py = pts[2].y + (pts[3].y - pts[2].y) * ratio;
-                }
-            }
-            let d = Math.hypot(obj.left - px, obj.top - py);
+            let p = getPointOnConduitAtT(c, t);
+            let d = Math.hypot(obj.left - p.x, obj.top - p.y);
             if (d < minDist) { minDist = d; bestT = t; }
         }
         c.posChamada = bestT;
@@ -177,59 +165,76 @@ canvas.on('mouse:wheel', function(opt) {
 });
 
 canvas.on('mouse:down', function(opt) {
-    if (opt.button === 2 || (opt.e && opt.e.button === 1)) { 
+    const evt = opt.e;
+    // CORREÇÃO DEF: Pan universal via ALT + Clique Esquerdo OU Botão do Meio
+    if (opt.button === 2 || (evt && evt.button === 1) || (evt && evt.altKey)) { 
         isPanning = true; canvas.selection = false; canvas.defaultCursor = 'grab'; 
-        lastPosX = opt.e.clientX; lastPosY = opt.e.clientY; canvas.discardActiveObject(); canvas.renderAll(); 
+        lastPosX = evt.clientX; lastPosY = evt.clientY; canvas.discardActiveObject(); canvas.renderAll(); 
         return;
     }
 
     if (!modoConduite) {
         listaConduites.forEach(c => {
-            const isTarget = opt.target && (opt.target === c.hitbox || opt.target === c.handle || opt.target === c.chamadaHandle || opt.target === c.chamadaBaseHandle || opt.target === c.linha);
+            const isTarget = opt.target && (opt.target === c.hitbox || opt.target === c.handle || opt.target === c.chamadaHandle || opt.target === c.chamadaBaseHandle || opt.target === c.branchAnchor || opt.target === c.linha);
             c.isAtivo = !!isTarget; 
+            const isBranchReto = c.tipo === 'reto' && c.destino && c.destino.isConduiteHitbox;
+
             if (isTarget) {
-                if (c.handle) canvas.bringToFront(c.handle); 
+                if (c.handle && !isBranchReto) canvas.bringToFront(c.handle); 
                 if (c.chamadaHandle) canvas.bringToFront(c.chamadaHandle);
                 if (c.chamadaBaseHandle) canvas.bringToFront(c.chamadaBaseHandle);
+                if (c.branchAnchor) canvas.bringToFront(c.branchAnchor);
             }
         });
         gerirVisibilidadeAncoras(); 
     }
 
-    if (modoConduite && opt.target && opt.target.tipoEquipamento) {
-        if (objConexaoOrigem === null) { objConexaoOrigem = opt.target; } 
-        else if (objConexaoOrigem !== opt.target) {
-            const p1 = objConexaoOrigem.getCenterPoint(); const p2 = opt.target.getCenterPoint();
-            const tipoAtual = modoConduite; const corPadrao = '#000000'; 
-            let pathStr = '', handleObj = null, eixoRef = 'X';
-            const handleId = 'hand_' + Date.now(); const linhaId = 'cond_' + Date.now();
-            let initHx = (p1.x + p2.x) / 2; let initHy = (p1.y + p2.y) / 2;
+    if (modoConduite && opt.target) {
+        const isEquip = !!opt.target.tipoEquipamento;
+        const isHitbox = !!opt.target.isConduiteHitbox;
 
-            if (tipoAtual === 'curvo') {
-                initHx += ((p2.y - p1.y) * 0.2); initHy -= ((p2.x - p1.x) * 0.2);
-                pathStr = `M ${p1.x} ${p1.y} Q ${initHx} ${initHy} ${p2.x} ${p2.y}`; 
-            } else if (tipoAtual === 'subterraneo') {
-                pathStr = `M ${p1.x} ${p1.y} L ${p2.x} ${p2.y}`;
-            } else {
-                eixoRef = Math.abs(p2.x - p1.x) > Math.abs(p2.y - p1.y) ? 'Y' : 'X';
-                if (eixoRef === 'Y') { initHy += 50; } else { initHx += 50; }
-                pathStr = `M ${p1.x} ${p1.y} L ${p2.x} ${p2.y}`;
+        if (isEquip || isHitbox) {
+            if (objConexaoOrigem === null) {
+                if (isEquip) { objConexaoOrigem = opt.target; }
+            } else if (objConexaoOrigem !== opt.target) {
+                if (isHitbox && opt.target.conduitRef.origem === objConexaoOrigem) return; 
+
+                const p1 = getTrueCenter(objConexaoOrigem);
+                let p2 = isHitbox ? getClosestPointOnConduit(opt.target.conduitRef, p1) : getTrueCenter(opt.target);
+                
+                const tipoAtual = modoConduite; const corPadrao = '#000000'; 
+                let pathStr = '', handleObj = null, eixoRef = 'X';
+                let initHx = (p1.x + p2.x) / 2; let initHy = (p1.y + p2.y) / 2;
+
+                if (tipoAtual === 'curvo') {
+                    initHx += ((p2.y - p1.y) * 0.2); initHy -= ((p2.x - p1.x) * 0.2);
+                    pathStr = `M ${p1.x} ${p1.y} Q ${initHx} ${initHy} ${p2.x} ${p2.y}`; 
+                } else if (tipoAtual === 'subterraneo' || (tipoAtual === 'reto' && isHitbox)) {
+                    pathStr = `M ${p1.x} ${p1.y} L ${p2.x} ${p2.y}`;
+                } else {
+                    eixoRef = Math.abs(p2.x - p1.x) > Math.abs(p2.y - p1.y) ? 'Y' : 'X';
+                    if (eixoRef === 'Y') { initHy += 50; } else { initHx += 50; }
+                    pathStr = `M ${p1.x} ${p1.y} L ${p2.x} ${p2.y}`;
+                }
+
+                handleObj = new fabric.Circle({ left: initHx, top: initHy, radius: 6, fill: corPadrao, stroke: '#fff', strokeWidth: 2, originX: 'center', originY: 'center', hasControls: false, hasBorders: false, isHandle: true, hoverCursor: 'pointer', visible: false, id: 'hand_' + Date.now(), selectable: true });
+                canvas.add(handleObj);
+
+                const isSub = tipoAtual === 'subterraneo';
+                const curva = new fabric.Path(pathStr, { fill: 'transparent', stroke: corPadrao, strokeWidth: 1, strokeUniform: true, strokeLineJoin: 'miter', strokeDashArray: isSub ? [8, 5] : null, selectable: false, evented: false, isConduite: true, id: 'cond_' + Date.now(), objectCaching: false });
+                const hitbox = new fabric.Path(pathStr, { fill: 'transparent', stroke: 'rgba(0,0,0,0.05)', strokeWidth: 15, strokeUniform: true, strokeLineJoin: 'miter', selectable: false, evented: true, hoverCursor: 'pointer', isConduiteHitbox: true, perPixelTargetFind: true, excludeFromExport: true, objectCaching: false });
+
+                canvas.add(hitbox); canvas.add(curva); canvas.sendToBack(hitbox); canvas.sendToBack(curva); 
+                
+                // Inicializa c.tBranch com 0.5 (meio) caso seja uma ramificação de curvo/subterrâneo
+                let tInit = isHitbox ? 0.5 : undefined;
+
+                const novoConduite = { origem: objConexaoOrigem, destino: isHitbox ? opt.target : opt.target, linha: curva, hitbox: hitbox, circuitos: [], cor: corPadrao, tipo: tipoAtual, handle: handleObj, eixo: eixoRef, escalaFios: 1.0, posChamada: 0.5, tBranch: tInit, grupoFiacao: [], hasChamada: false, corChamada: '#555555', isAtivo: false };
+                hitbox.conduitRef = novoConduite; if (handleObj) handleObj.conduitRef = novoConduite;
+                listaConduites.push(novoConduite); atualizarPosicaoConduites();
+                if (handleObj) canvas.bringToFront(handleObj); canvas.renderAll();
+                objConexaoOrigem = opt.target;
             }
-
-            handleObj = new fabric.Circle({ left: initHx, top: initHy, radius: 6, fill: corPadrao, stroke: '#fff', strokeWidth: 2, originX: 'center', originY: 'center', hasControls: false, hasBorders: false, isHandle: true, hoverCursor: 'pointer', visible: false, id: handleId, selectable: true });
-            canvas.add(handleObj);
-
-            const isSub = tipoAtual === 'subterraneo';
-            const curva = new fabric.Path(pathStr, { fill: 'transparent', stroke: corPadrao, strokeWidth: 1, strokeUniform: true, strokeLineJoin: 'miter', strokeDashArray: isSub ? [8, 5] : null, selectable: false, evented: false, isConduite: true, id: linhaId, objectCaching: false });
-            const hitbox = new fabric.Path(pathStr, { fill: 'transparent', stroke: 'rgba(0,0,0,0.05)', strokeWidth: 15, strokeUniform: true, strokeLineJoin: 'miter', selectable: false, evented: true, hoverCursor: 'pointer', isConduiteHitbox: true, perPixelTargetFind: true, excludeFromExport: true, objectCaching: false });
-
-            canvas.add(hitbox); canvas.add(curva); canvas.sendToBack(hitbox); canvas.sendToBack(curva); 
-            
-            const novoConduite = { origem: objConexaoOrigem, destino: opt.target, linha: curva, hitbox: hitbox, circuitos: [], cor: corPadrao, tipo: tipoAtual, handle: handleObj, eixo: eixoRef, escalaFios: 1.0, posChamada: 0.5, grupoFiacao: [], hasChamada: false, corChamada: '#555555', isAtivo: false };
-            hitbox.conduitRef = novoConduite; if (handleObj) handleObj.conduitRef = novoConduite;
-            listaConduites.push(novoConduite); atualizarPosicaoConduites();
-            if (handleObj) canvas.bringToFront(handleObj); canvas.renderAll();
-            objConexaoOrigem = opt.target;
         }
     }
 });
@@ -258,13 +263,15 @@ canvas.on('mouse:dblclick', function(options) {
                 c.handle.set({ left: 2 * pX - cx, top: 2 * pY - cy }); c.handle.setCoords();
             }
         } else if (c.tipo === 'reto') {
-            c.eixo = c.eixo === 'X' ? 'Y' : 'X';
-            if (c.eixo === 'X') { c.handle.set({ left: (p1.x + p2.x)/2 + 50, top: (p1.y + p2.y)/2 }); } else { c.handle.set({ left: (p1.x + p2.x)/2, top: (p1.y + p2.y)/2 + 50 }); }
+            if (!(c.destino && c.destino.isConduiteHitbox)) {
+                c.eixo = c.eixo === 'X' ? 'Y' : 'X';
+                if (c.eixo === 'X') { c.handle.set({ left: (p1.x + p2.x)/2 + 50, top: (p1.y + p2.y)/2 }); } else { c.handle.set({ left: (p1.x + p2.x)/2, top: (p1.y + p2.y)/2 + 50 }); }
+            }
         }
         atualizarPosicaoConduites(); canvas.renderAll(); return;
     }
     
-    if (options.target.isChamadaHandle || options.target.isChamadaBaseHandle) return;
+    if (options.target.isChamadaHandle || options.target.isChamadaBaseHandle || options.target.isBranchAnchor) return;
 
     if (options.target.isConduiteHitbox || options.target.isConduite) {
         objetoSendoEditado = options.target.conduitRef || listaConduites.find(c => c.linha === options.target);
@@ -317,8 +324,8 @@ addEvent('btn-salvar', 'click', () => {
         c.hasChamada = hasChamada; c.corChamada = document.getElementById('conf-cor-chamada').value;
 
         if (hasChamada && !c.chamadaHandle) {
-            const p1 = c.origem.getCenterPoint(); const p2 = c.destino.getCenterPoint();
-            c.chamadaHandle = new fabric.Rect({ left: (p1.x + p2.x)/2 + 60, top: (p1.y + p2.y)/2 - 60, width: 12, height: 12, fill: '#f39c12', stroke: '#fff', strokeWidth: 2, originX: 'center', originY: 'center', hasControls: false, hasBorders: false, isChamadaHandle: true, hoverCursor: 'pointer', id: 'cham_' + Date.now(), selectable: true });
+            const p1 = c.origem.getCenterPoint();
+            c.chamadaHandle = new fabric.Rect({ left: p1.x + 60, top: p1.y - 60, width: 12, height: 12, fill: '#f39c12', stroke: '#fff', strokeWidth: 2, originX: 'center', originY: 'center', hasControls: false, hasBorders: false, isChamadaHandle: true, hoverCursor: 'pointer', id: 'cham_' + Date.now(), selectable: true });
             c.chamadaHandle.conduitRef = c; canvas.add(c.chamadaHandle);
         }
 
@@ -334,7 +341,12 @@ addEvent('btn-salvar', 'click', () => {
 addEvent('btn-save-project', 'click', () => {
     const data = {
         canvas: canvas.toJSON(['id', 'tipoEquipamento', 'circuito', 'is220v', 'altaPotencia', 'nome', 'numeroTomadas', 'lampId', 'potencia', 'isConduite', 'isHandle', 'isFiacao', 'isChamadaHandle', 'isChamadaBaseHandle']),
-        conduites: listaConduites.map(c => ({ origemId: c.origem ? c.origem.id : null, destinoId: c.destino ? c.destino.id : null, linhaId: c.linha ? c.linha.id : null, handleId: c.handle ? c.handle.id : null, chamadaHandleId: c.chamadaHandle ? c.chamadaHandle.id : null, hasChamada: c.hasChamada, corChamada: c.corChamada, posChamada: c.posChamada, tipo: c.tipo, cor: c.cor, eixo: c.eixo, escalaFios: c.escalaFios, circuitos: c.circuitos }))
+        conduites: listaConduites.map(c => ({ 
+            origemId: c.origem ? c.origem.id : null, 
+            destinoId: c.destino && !c.destino.isConduiteHitbox ? c.destino.id : null, 
+            destinoConduiteLinhaId: c.destino && c.destino.isConduiteHitbox ? c.destino.conduitRef.linha.id : null,
+            linhaId: c.linha ? c.linha.id : null, handleId: c.handle ? c.handle.id : null, chamadaHandleId: c.chamadaHandle ? c.chamadaHandle.id : null, hasChamada: c.hasChamada, corChamada: c.corChamada, posChamada: c.posChamada, tBranch: c.tBranch, tipo: c.tipo, cor: c.cor, eixo: c.eixo, escalaFios: c.escalaFios, circuitos: c.circuitos 
+        }))
     };
     const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify(data)], { type: 'application/json' })); a.download = 'projeto_eletrico.json'; a.click();
 });
@@ -345,22 +357,25 @@ addEvent('load-project', 'change', function(e) {
     reader.onload = function(f) {
         const data = JSON.parse(f.target.result);
         canvas.loadFromJSON(data.canvas, function() {
-            const objects = canvas.getObjects();
-            objects.forEach(obj => {
+            const todosObjs = canvas.getObjects();
+            
+            todosObjs.forEach(obj => {
                 if (obj._objects) { obj._objects.forEach(s => { if (s.type === 'text' && (s.fill === '#1a252f' || s.fill === 'rgb(26, 37, 47)')) { s.set('fill', '#000000'); } }); }
                 if (obj.isConduite || obj.isConduiteHitbox) { if (obj.stroke === '#1a252f') obj.set('stroke', '#000000'); }
             });
 
-            const toRemove = objects.filter(o => o.isFiacao || o.isConduiteHitbox || o.isChamadaBaseHandle); toRemove.forEach(o => canvas.remove(o));
-
+            const toRemove = todosObjs.filter(o => o.isFiacao || o.isConduiteHitbox || o.isChamadaBaseHandle || o.isBranchAnchor); 
+            toRemove.forEach(o => canvas.remove(o));
             listaConduites = [];
+
             if (data.conduites) {
                 data.conduites.forEach(cData => {
-                    const todosObjs = canvas.getObjects();
-                    const org = todosObjs.find(o => o.id === cData.origemId); const dest = todosObjs.find(o => o.id === cData.destinoId); const lin = todosObjs.find(o => o.id === cData.linhaId);
-                    let han = cData.handleId ? todosObjs.find(o => o.id === cData.handleId) : null; let cham = cData.chamadaHandleId ? todosObjs.find(o => o.id === cData.chamadaHandleId) : null;
+                    const org = canvas.getObjects().find(o => o.id === cData.origemId); 
+                    const lin = canvas.getObjects().find(o => o.id === cData.linhaId);
+                    let han = cData.handleId ? canvas.getObjects().find(o => o.id === cData.handleId) : null; 
+                    let cham = cData.chamadaHandleId ? canvas.getObjects().find(o => o.id === cData.chamadaHandleId) : null;
                     
-                    if (org && dest && lin) {
+                    if (org && lin) {
                         const corF = (cData.cor === '#1a252f') ? '#000000' : (cData.cor || '#000000');
                         const isSub = cData.tipo === 'subterraneo';
                         lin.set({ selectable: false, evented: false, isConduite: true, objectCaching: false, fill: 'transparent', stroke: corF, strokeDashArray: isSub ? [8, 5] : null });
@@ -372,15 +387,25 @@ addEvent('load-project', 'change', function(e) {
                         if (cham) cham.set({ selectable: true, evented: true, hasControls: false, hasBorders: false, isChamadaHandle: true });
                         
                         if (cData.hasChamada && !cham) {
-                            const p1 = org.getCenterPoint(); const p2 = dest.getCenterPoint();
-                            cham = new fabric.Rect({ left: (p1.x + p2.x)/2 + 60, top: (p1.y + p2.y)/2 - 60, width: 12, height: 12, fill: '#f39c12', stroke: '#fff', strokeWidth: 2, originX: 'center', originY: 'center', hasControls: false, hasBorders: false, isChamadaHandle: true, hoverCursor: 'pointer', visible: false, id: 'cham_' + Date.now(), selectable: true });
+                            const p1 = org.getCenterPoint();
+                            cham = new fabric.Rect({ left: p1.x + 60, top: p1.y - 60, width: 12, height: 12, fill: '#f39c12', stroke: '#fff', strokeWidth: 2, originX: 'center', originY: 'center', hasControls: false, hasBorders: false, isChamadaHandle: true, hoverCursor: 'pointer', visible: false, id: 'cham_' + Date.now(), selectable: true });
                             canvas.add(cham);
                         }
 
-                        const nC = { origem: org, destino: dest, linha: lin, hitbox: hitbox, handle: han, chamadaHandle: cham, hasChamada: cData.hasChamada || false, corChamada: cData.corChamada || '#555555', posChamada: cData.posChamada !== undefined ? cData.posChamada : 0.5, tipo: cData.tipo, cor: corF, eixo: cData.eixo, escalaFios: cData.escalaFios, circuitos: cData.circuitos || [], grupoFiacao: [], isAtivo: false };
+                        const nC = { origem: org, destino: null, linha: lin, hitbox: hitbox, handle: han, chamadaHandle: cham, hasChamada: cData.hasChamada || false, corChamada: cData.corChamada || '#555555', posChamada: cData.posChamada !== undefined ? cData.posChamada : 0.5, tBranch: cData.tBranch, tipo: cData.tipo, cor: corF, eixo: cData.eixo, escalaFios: cData.escalaFios, circuitos: cData.circuitos || [], grupoFiacao: [], isAtivo: false, cDataRef: cData };
                         hitbox.conduitRef = nC; if (han) han.conduitRef = nC; if (cham) cham.conduitRef = nC;
                         listaConduites.push(nC);
                     }
+                });
+
+                listaConduites.forEach(c => {
+                    if (c.cDataRef.destinoConduiteLinhaId) {
+                        const parentC = listaConduites.find(pc => pc.linha.id === c.cDataRef.destinoConduiteLinhaId);
+                        c.destino = parentC ? parentC.hitbox : null;
+                    } else {
+                        c.destino = canvas.getObjects().find(o => o.id === c.cDataRef.destinoId);
+                    }
+                    delete c.cDataRef;
                 });
             }
             const pText = document.getElementById('placeholder-text'); if(pText) pText.style.display = 'none';
@@ -399,31 +424,29 @@ addEvent('btn-export-pdf', 'click', () => {
     pdf.addImage(dataUrl, 'PNG', 0, 0, canvas.width, canvas.height); pdf.save('planta_eletrica_exportada.pdf');
 });
 
+function deletarConduiteEFilhos(conduitData) {
+    const idx = listaConduites.indexOf(conduitData);
+    if (idx > -1) { 
+        canvas.remove(conduitData.linha); if(conduitData.hitbox) canvas.remove(conduitData.hitbox);
+        if(conduitData.grupoFiacao) conduitData.grupoFiacao.forEach(f => canvas.remove(f)); 
+        if(conduitData.chamadaLine) canvas.remove(conduitData.chamadaLine);
+        if(conduitData.chamadaHandle) canvas.remove(conduitData.chamadaHandle);
+        if(conduitData.chamadaBaseHandle) canvas.remove(conduitData.chamadaBaseHandle);
+        if(conduitData.branchAnchor) canvas.remove(conduitData.branchAnchor);
+        if(conduitData.handle) canvas.remove(conduitData.handle);
+        listaConduites.splice(idx, 1); 
+        
+        listaConduites.filter(c => c.destino === conduitData.hitbox).forEach(child => deletarConduiteEFilhos(child));
+    }
+}
+
 function acaoDeletar() {
     const activeObject = canvas.getActiveObject(); 
     if (activeObject) {
-        if (activeObject.isHandle || activeObject.isChamadaHandle || activeObject.isChamadaBaseHandle) {
-            const conduitData = activeObject.conduitRef; const idx = listaConduites.indexOf(conduitData);
-            if (idx > -1) { 
-                canvas.remove(conduitData.linha); if(conduitData.hitbox) canvas.remove(conduitData.hitbox);
-                if(conduitData.grupoFiacao) conduitData.grupoFiacao.forEach(f => canvas.remove(f)); 
-                if(conduitData.chamadaLine) canvas.remove(conduitData.chamadaLine);
-                if(conduitData.chamadaHandle) canvas.remove(conduitData.chamadaHandle);
-                if(conduitData.chamadaBaseHandle) canvas.remove(conduitData.chamadaBaseHandle);
-                canvas.remove(activeObject); listaConduites.splice(idx, 1); 
-            } return;
+        if (activeObject.isHandle || activeObject.isChamadaHandle || activeObject.isChamadaBaseHandle || activeObject.isBranchAnchor) {
+            deletarConduiteEFilhos(activeObject.conduitRef);
         } else {
-            listaConduites = listaConduites.filter(c => {
-                if (c.origem === activeObject || c.destino === activeObject) { 
-                    canvas.remove(c.linha); if(c.hitbox) canvas.remove(c.hitbox);
-                    if(c.grupoFiacao) c.grupoFiacao.forEach(f => canvas.remove(f)); 
-                    if(c.handle) canvas.remove(c.handle); 
-                    if(c.chamadaLine) canvas.remove(c.chamadaLine);
-                    if(c.chamadaHandle) canvas.remove(c.chamadaHandle);
-                    if(c.chamadaBaseHandle) canvas.remove(c.chamadaBaseHandle);
-                    return false; 
-                } return true;
-            });
+            listaConduites.filter(c => c.origem === activeObject || c.destino === activeObject).forEach(child => deletarConduiteEFilhos(child));
         }
         canvas.remove(activeObject); 
     }
@@ -432,16 +455,7 @@ function acaoDeletar() {
 addEvent('delete-btn', 'click', acaoDeletar);
 addEvent('btn-deletar-conduite', 'click', () => {
     if (objetoSendoEditado && objetoSendoEditado.linha) { 
-        const c = objetoSendoEditado; const idx = listaConduites.indexOf(c);
-        if (idx > -1) { 
-            canvas.remove(c.linha); if(c.hitbox) canvas.remove(c.hitbox);
-            if(c.grupoFiacao) c.grupoFiacao.forEach(f => canvas.remove(f));
-            if(c.handle) canvas.remove(c.handle); 
-            if(c.chamadaHandle) canvas.remove(c.chamadaHandle);
-            if(c.chamadaBaseHandle) canvas.remove(c.chamadaBaseHandle);
-            if(c.chamadaLine) canvas.remove(c.chamadaLine);
-            listaConduites.splice(idx, 1); 
-        }
+        deletarConduiteEFilhos(objetoSendoEditado);
         canvas.renderAll(); document.getElementById('modal-overlay').style.display = 'none'; objetoSendoEditado = null;
     }
 });
@@ -457,8 +471,6 @@ addEvent('clear-btn', 'click', () => {
 window.addEventListener('keydown', (e) => { 
     if ((e.key === 'Delete' || e.key === 'Backspace') && e.target.tagName !== 'INPUT') { acaoDeletar(); } 
     if (e.key === 'Escape') {
-        desativarModoConduite();
-        document.getElementById('modal-overlay').style.display = 'none';
-        objetoSendoEditado = null;
+        desativarModoConduite(); document.getElementById('modal-overlay').style.display = 'none'; objetoSendoEditado = null;
     }
 });
